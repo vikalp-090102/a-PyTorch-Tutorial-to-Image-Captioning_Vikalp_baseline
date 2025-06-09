@@ -81,12 +81,12 @@ def main():
     ])
 
     train_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(image_folder, reports_csv, split="TRAIN", transform=normalize),
+        IndianaXrayDataset(data_folder, reports_csv, split="TRAIN", transform=normalize),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True
     )
 
     val_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(image_folder, reports_csv, split="VAL", transform=normalize),
+        IndianaXrayDataset(data_folder, reports_csv, split="VAL", transform=normalize),
         batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True
     )
 
