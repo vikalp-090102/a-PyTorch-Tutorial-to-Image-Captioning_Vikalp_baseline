@@ -14,11 +14,13 @@ from torch.optim import lr_scheduler
 import os
 import torch
 
+
 # Define checkpoint path
 import os
 import torch
 import torchvision
 from modela_new_SAT import Attention
+
 
 # Check for checkpoint before initializing models
 checkpoint_path = "/kaggle/working/checkpoint.pth"
@@ -29,6 +31,7 @@ else:
     checkpoint = None  # Train from scratch
 
 # Initialize model based on checkpoint availability
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu"
 if checkpoint is None:
     encoder = Encoder()
     decoder = DecoderWithAttention(
