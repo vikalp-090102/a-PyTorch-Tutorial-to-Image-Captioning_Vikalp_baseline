@@ -81,21 +81,13 @@ def main():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     
-train_loader = torch.utils.data.DataLoader(
-    IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="TRAIN", transform=normalize),
-    batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True
-)
-
-val_loader = torch.utils.data.DataLoader(
-    IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="VAL", transform=normalize),
-    batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True
-)
-
-
+    train_loader = torch.utils.data.DataLoader(
+        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="TRAIN", transform=normalize),
+        batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True
     )
 
     val_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(data_folder, reports_csv, split="VAL", transform=normalize),
+        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="VAL", transform=normalize),
         batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True
     )
 
