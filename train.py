@@ -73,7 +73,6 @@ fine_tune_encoder = True  # Enable fine-tuning since X-ray features may differ
 checkpoint = "/kaggle/working/checkpoint.pth"  # Save model in Kaggle working directory
 
 def main():
-    
     """Training and validation."""
 
     global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map
@@ -136,7 +135,6 @@ def main():
 
     print("Training initialized...")
 
-
     # Epochs
     import torch.optim.lr_scheduler as lr_scheduler
 
@@ -145,41 +143,41 @@ def main():
     scheduler = lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode="max", factor=0.8, patience=8)
 
     for epoch in range(start_epoch, epochs):
-    # Terminate training if BLEU score has stagnated for too long
+        # Terminate training if BLEU score has stagnated for too long
         if epochs_since_improvement >= 20:
             print("\nTraining stopped due to lack of improvement.")
             break
 
-    # One epoch's training
-    train(train_loader=train_loader,
-          encoder=encoder,
-          decoder=decoder,
-          criterion=criterion,
-          encoder_optimizer=encoder_optimizer,
-          decoder_optimizer=decoder_optimizer,
-          epoch=epoch)
+        # One epoch's training
+        train(train_loader=train_loader,
+              encoder=encoder,
+              decoder=decoder,
+              criterion=criterion,
+              encoder_optimizer=encoder_optimizer,
+              decoder_optimizer=decoder_optimizer,
+              epoch=epoch)
 
-    # One epoch's validation
-    recent_bleu4 = validate(val_loader=val_loader,
-                            encoder=encoder,
-                            decoder=decoder,
-                            criterion=criterion)
+        # One epoch's validation
+        recent_bleu4 = validate(val_loader=val_loader,
+                                encoder=encoder,
+                                decoder=decoder,
+                                criterion=criterion)
 
-    # Check for improvement
-    is_best = recent_bleu4 > best_bleu4
-    best_bleu4 = max(recent_bleu4, best_bleu4)
+        # Check for improvement
+        is_best = recent_bleu4 > best_bleu4
+        best_bleu4 = max(recent_bleu4, best_bleu4)
 
-    if not is_best:
-        epochs_since_improvement += 1
-        print(f"\nEpochs since last improvement: {epochs_since_improvement}")
-        scheduler.step(recent_bleu4)  # Adjust LR based on BLEU score
-    else:
-        epochs_since_improvement = 0
+        if not is_best:
+            epochs_since_improvement += 1
+            print(f"\nEpochs since last improvement: {epochs_since_improvement}")
+            scheduler.step(recent_bleu4)  # Adjust LR based on BLEU score
+        else:
+            epochs_since_improvement = 0
 
-    # Save checkpoint only if improvement occurs
-    if is_best:
-        save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,
-                        decoder_optimizer, recent_bleu4, is_best)
+        # Save checkpoint only if improvement occurs
+        if is_best:
+            save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,
+                            decoder_optimizer, recent_bleu4, is_best)
 
 
 import torch
