@@ -31,8 +31,15 @@ else:
 # Initialize model based on checkpoint availability
 if checkpoint is None:
     encoder = Encoder()
-    decoder = DecoderWithAttention(...)
-    decoder_optimizer = torch.optim.Adam(...)
+    decoder = DecoderWithAttention(
+    attention_dim=512,
+    embed_dim=300,
+    decoder_dim=512,
+    encoder_dim=2048,
+    dropout=0.5).to(device)
+
+    decoder_optimizer = torch.optim.Adam(params=decoder.parameters(), lr=4e-4)
+
 else:
     encoder = checkpoint["encoder"]
     decoder = checkpoint["decoder"]
