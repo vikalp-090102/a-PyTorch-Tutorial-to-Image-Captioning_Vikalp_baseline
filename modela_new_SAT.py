@@ -69,9 +69,10 @@ class Attention(nn.Module):
 class DecoderWithAttention(nn.Module):
     """Decoder with Attention mechanism."""
 
-    def __init__(self, attention_dim=512, embed_dim=300, decoder_dim=512, encoder_dim=2048, dropout=0.5):
+    def __init__(self, attention_dim=512, embed_dim=300, decoder_dim=512, encoder_dim=2048, vocab_size=10000,dropout=0.5):
         super(DecoderWithAttention, self).__init__()
         self.vocab_size=vocab_size
+        self.embedding = nn.Embedding(self.vocab_size, embed_dim)
 
         # Ensure input dimensions are integers
         assert all(isinstance(val, int) for val in [attention_dim, embed_dim, decoder_dim, encoder_dim]), \
