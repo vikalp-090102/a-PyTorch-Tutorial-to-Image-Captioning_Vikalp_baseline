@@ -15,14 +15,29 @@ import os
 import torch
 
 # Define checkpoint path
+import os
+import torch
+import torchvision
+
+# Check for checkpoint before initializing models
 checkpoint_path = "/kaggle/working/checkpoint.pth"
 
-# Check if checkpoint exists
 if os.path.exists(checkpoint_path):
     checkpoint = torch.load(checkpoint_path)
 else:
-    checkpoint = None  # No checkpoint, train from scratch
+    checkpoint = None  # Train from scratch
 
+# Initialize model based on checkpoint availability
+if checkpoint is None:
+    encoder = Encoder()
+    decoder = DecoderWithAttention(...)
+    decoder_optimizer = torch.optim.Adam(...)
+else:
+    encoder = checkpoint["encoder"]
+    decoder = checkpoint["decoder"]
+    decoder_optimizer = checkpoint["decoder_optimizer"]
+
+# Continue with training loop...
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
 data_name = "indiana_chest_xray"  # Modify to match dataset structure
