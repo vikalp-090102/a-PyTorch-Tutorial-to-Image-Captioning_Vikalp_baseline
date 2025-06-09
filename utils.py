@@ -3,7 +3,16 @@ import numpy as np
 import h5py
 import json
 import torch
-from scipy.misc import imread, imresize
+import imageio
+import cv2
+
+# Use imageio for imread
+def imread(path):
+    return imageio.imread(path)
+
+# Use cv2 for resizing
+def imresize(image, size):
+    return cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
 from tqdm import tqdm
 from collections import Counter
 from random import seed, choice, sample
