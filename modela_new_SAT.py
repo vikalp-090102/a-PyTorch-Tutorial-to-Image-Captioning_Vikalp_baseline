@@ -55,7 +55,7 @@ class Attention(nn.Module):
     """
     Attention Network tailored for medical image captioning.
     """
-
+    print(f"Initializing Attention with encoder_dim={encoder_dim}, decoder_dim={decoder_dim}, attention_dim={attention_dim}")
     def __init__(self, encoder_dim, decoder_dim, attention_dim):
         """
         :param encoder_dim: Feature size of encoded images (2048 for ResNet-101)
