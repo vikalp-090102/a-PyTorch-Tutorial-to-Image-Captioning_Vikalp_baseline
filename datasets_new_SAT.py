@@ -3,6 +3,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 import os
+import glob  # import at top-level
 
 class IndianaXrayDataset(Dataset):
     
@@ -18,27 +19,25 @@ class IndianaXrayDataset(Dataset):
         # Merge data on UID
         self.data = self.projections.merge(self.reports, on='uid')
         
-    import glob
-
     def __getitem__(self, idx):
-    row = self.data.iloc[idx]
-    uid = str(row['uid'])
+        row = self.data.iloc[idx]
+        uid = str(row['uid'])
 
-    # Search files starting with uid in image_dir
-    files = glob.glob(os.path.join(self.image_dir, f"{uid}*.png"))  # adjust extension if needed
+        # Search files starting with uid in image_dir
+        files = glob.glob(os.path.join(self.image_dir, f"{uid}*.png"))  # adjust extension if needed
 
-    if len(files) == 0:
-        raise FileNotFoundError(f"No image file found for UID {uid}")
+        if len(files) == 0:
+            raise FileNotFoundError(f"No image file found for UID {uid}")
 
-    img_path = files[0]  # Take the first match
+        img_path = files[0]  # Take the first match
 
-    image = Image.open(img_path).convert("RGB")
+        image = Image.open(img_path).convert("RGB")
 
-    if self.transform:
-        image = self.transform(image)
+        if self.transform:
+            image = self.transform(image)
 
-    caption = row['findings']
-    return image, caption
+        caption = row['findings']
+        return image, caption
 
     def __len__(self):
         return len(self.data)
