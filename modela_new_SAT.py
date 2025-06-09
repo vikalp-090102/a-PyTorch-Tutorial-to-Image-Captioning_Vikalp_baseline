@@ -71,6 +71,7 @@ class DecoderWithAttention(nn.Module):
 
     def __init__(self, attention_dim=512, embed_dim=300, decoder_dim=512, encoder_dim=2048, dropout=0.5):
         super(DecoderWithAttention, self).__init__()
+        self.vocab_size=vocab_size
 
         # Ensure input dimensions are integers
         assert all(isinstance(val, int) for val in [attention_dim, embed_dim, decoder_dim, encoder_dim]), \
