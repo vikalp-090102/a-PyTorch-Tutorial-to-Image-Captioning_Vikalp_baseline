@@ -19,7 +19,8 @@ class IndianaXrayDataset(Dataset):
         
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
-        img_path = os.path.join(self.image_dir, row['image_path'])  # Adjust as needed
+        img_filename = f"{row['uid']}.jpg"  # adjust extension if needed
+        img_path = os.path.join(self.image_dir, img_filename)
         image = Image.open(img_path).convert("RGB")
         
         if self.transform:
