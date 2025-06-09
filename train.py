@@ -13,11 +13,13 @@ import json
 from torch.optim import lr_scheduler
 import os
 import torch
+from torch.cuda.amp import GradScaler, autocast
 
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
 data_name = "indiana_chest_xray"  # Modify to match dataset structure
-reports_csv= "/kaggle/input/chest-xrays-indiana-university/indiana_reports.csv"
+reports_csv = "/kaggle/input/chest-xrays-indiana-university/indiana_reports.csv"
+projections_csv = "/kaggle/input/chest-xrays-indiana-university/indiana_projections.csv"  # Added missing variable
 
 # Load word map dynamically
 word_map_path = "/kaggle/working/word_map.json"
@@ -48,98 +50,9 @@ print_freq = 50  # More frequent logging for medical training
 fine_tune_encoder = True  # Enable fine-tuning since X-ray features may differ
 checkpoint_path = "/kaggle/working/checkpoint.pth"  # Save model in Kaggle working directory
 
-def main():
-    """Training and validation."""
-    global best_bleu4, epochs_since_improvement, start_epoch, fine_tune_encoder, data_name, word_map
-
-    # Initialize models from scratch
-    decoder = DecoderWithAttention(attention_dim=attention_dim,
-                                   embed_dim=emb_dim,
-                                   decoder_dim=decoder_dim,
-                                   dropout=dropout)
-
-    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
-                                         lr=decoder_lr)
-
-    encoder = Encoder()
-    encoder.fine_tune(fine_tune_encoder)
-
-    encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
-                                         lr=encoder_lr) if fine_tune_encoder else None
-
-    # Move to GPU, if available
-    decoder = decoder.to(device)
-    encoder = encoder.to(device)
-
-    # Loss function
-    criterion = nn.CrossEntropyLoss().to(device)
-
-    # Custom dataloaders
-    normalize = transforms.Compose([
-        transforms.Resize((256, 256)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    
-    train_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="TRAIN", transform=normalize),
-        batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True
-    )
-
-    val_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="VAL", transform=normalize),
-        batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True
-    )
-
-    print("Training initialized...")
-
-    # Learning rate scheduler
-    scheduler = lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode="max", factor=0.8, patience=8)
-
-    for epoch in range(start_epoch, epochs):
-        # Terminate training if BLEU score has stagnated for too long
-        if epochs_since_improvement >= 20:
-            print("\nTraining stopped due to lack of improvement.")
-            break
-
-        # One epoch's training
-        train(train_loader=train_loader,
-              encoder=encoder,
-              decoder=decoder,
-              criterion=criterion,
-              encoder_optimizer=encoder_optimizer,
-              decoder_optimizer=decoder_optimizer,
-              epoch=epoch)
-
-        # One epoch's validation
-        recent_bleu4 = validate(val_loader=val_loader,
-                                encoder=encoder,
-                                decoder=decoder,
-                                criterion=criterion)
-
-        # Check for improvement
-        is_best = recent_bleu4 > best_bleu4
-        best_bleu4 = max(recent_bleu4, best_bleu4)
-
-        if not is_best:
-            epochs_since_improvement += 1
-            print(f"\nEpochs since last improvement: {epochs_since_improvement}")
-            scheduler.step(recent_bleu4)  # Adjust LR based on BLEU score
-        else:
-            epochs_since_improvement = 0
-
-        # Save checkpoint only if improvement occurs
-        if is_best:
-            save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,
-                            decoder_optimizer, recent_bleu4, is_best)
-
-
-import torch
-import time
-from torch.nn.utils.rnn import pack_padded_sequence
-from torch.cuda.amp import GradScaler, autocast  # Mixed precision for efficiency
-
+# Initialize mixed precision scaler
 scaler = GradScaler()  # Helps with automatic mixed precision training
+
 
 def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch, grad_accum_steps=2):
     """
@@ -154,7 +67,6 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
     :param epoch: epoch number
     :param grad_accum_steps: number of batches to accumulate gradients before updating weights
     """
-
     decoder.train()  # Enable training mode (dropout active)
     encoder.train()
 
@@ -309,6 +221,94 @@ def validate(val_loader, encoder, decoder, criterion):
         print(f"\n * LOSS - {losses.avg:.3f}, TOP-5 ACCURACY - {top5accs.avg:.3f}, BLEU-4 - {bleu4:.4f}")
 
     return bleu4
+
+
+def main():
+    """Training and validation."""
+    global best_bleu4, epochs_since_improvement, start_epoch, fine_tune_encoder, data_name, word_map
+
+    # Initialize models from scratch
+    decoder = DecoderWithAttention(attention_dim=attention_dim,
+                                   embed_dim=emb_dim,
+                                   decoder_dim=decoder_dim,
+                                   vocab_size=vocab_size,
+                                   dropout=dropout)
+
+    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
+                                         lr=decoder_lr)
+
+    encoder = Encoder()
+    encoder.fine_tune(fine_tune_encoder)
+
+    encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
+                                         lr=encoder_lr) if fine_tune_encoder else None
+
+    # Move to GPU, if available
+    decoder = decoder.to(device)
+    encoder = encoder.to(device)
+
+    # Loss function
+    criterion = nn.CrossEntropyLoss().to(device)
+
+    # Custom dataloaders
+    normalize = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    
+    train_loader = torch.utils.data.DataLoader(
+        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="TRAIN", transform=normalize),
+        batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True
+    )
+
+    val_loader = torch.utils.data.DataLoader(
+        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="VAL", transform=normalize),
+        batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True
+    )
+
+    print("Training initialized...")
+
+    # Learning rate scheduler
+    scheduler = lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode="max", factor=0.8, patience=8)
+
+    for epoch in range(start_epoch, epochs):
+        # Terminate training if BLEU score has stagnated for too long
+        if epochs_since_improvement >= 20:
+            print("\nTraining stopped due to lack of improvement.")
+            break
+
+        # One epoch's training
+        train(train_loader=train_loader,
+              encoder=encoder,
+              decoder=decoder,
+              criterion=criterion,
+              encoder_optimizer=encoder_optimizer,
+              decoder_optimizer=decoder_optimizer,
+              epoch=epoch)
+
+        # One epoch's validation
+        recent_bleu4 = validate(val_loader=val_loader,
+                                encoder=encoder,
+                                decoder=decoder,
+                                criterion=criterion)
+
+        # Check for improvement
+        is_best = recent_bleu4 > best_bleu4
+        best_bleu4 = max(recent_bleu4, best_bleu4)
+
+        if not is_best:
+            epochs_since_improvement += 1
+            print(f"\nEpochs since last improvement: {epochs_since_improvement}")
+            scheduler.step(recent_bleu4)  # Adjust LR based on BLEU score
+        else:
+            epochs_since_improvement = 0
+
+        # Save checkpoint only if improvement occurs
+        if is_best:
+            save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,
+                            decoder_optimizer, recent_bleu4, is_best)
+
 
 if __name__ == "__main__":
     main()
