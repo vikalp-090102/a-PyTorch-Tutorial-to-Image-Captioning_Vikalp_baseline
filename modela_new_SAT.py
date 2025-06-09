@@ -48,7 +48,8 @@ class Encoder(nn.Module):
 class Attention(nn.Module):
     """Attention Network tailored for medical image captioning."""
 
-    def __init__(self, encoder_dim, decoder_dim, attention_dim):
+    def __init__(self, encoder_dim=2048, decoder_dim=512, attention_dim=512):
+
         super(Attention, self).__init__()
 
         self.encoder_att = nn.Linear(encoder_dim, attention_dim)
