@@ -46,6 +46,7 @@ fine_tune_encoder = True  # Enable fine-tuning since X-ray features may differ
 checkpoint = "/kaggle/working/checkpoint.pth"  # Save model in Kaggle working directory
 
 def main():
+    
     """Training and validation."""
 
     global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map
@@ -112,13 +113,15 @@ def main():
     # Epochs
     import torch.optim.lr_scheduler as lr_scheduler
 
-scheduler = lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode="max", factor=0.8, patience=8)
+    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()), lr=decoder_lr)
 
-for epoch in range(start_epoch, epochs):
+    scheduler = lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode="max", factor=0.8, patience=8)
+
+    for epoch in range(start_epoch, epochs):
     # Terminate training if BLEU score has stagnated for too long
-    if epochs_since_improvement >= 20:
-        print("\nTraining stopped due to lack of improvement.")
-        break
+        if epochs_since_improvement >= 20:
+            print("\nTraining stopped due to lack of improvement.")
+            break
 
     # One epoch's training
     train(train_loader=train_loader,
