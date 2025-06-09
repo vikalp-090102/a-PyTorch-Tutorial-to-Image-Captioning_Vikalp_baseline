@@ -31,7 +31,7 @@ else:
     checkpoint = None  # Train from scratch
 
 # Initialize model based on checkpoint availability
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if checkpoint is None:
     encoder = Encoder()
     decoder = DecoderWithAttention(
