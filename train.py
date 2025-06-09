@@ -14,41 +14,6 @@ from torch.optim import lr_scheduler
 import os
 import torch
 
-
-# Define checkpoint path
-import os
-import torch
-import torchvision
-from modela_new_SAT import Attention
-
-
-# Check for checkpoint before initializing models
-checkpoint_path = "/kaggle/working/checkpoint.pth"
-
-if os.path.exists(checkpoint_path):
-    checkpoint = torch.load(checkpoint_path)
-else:
-    checkpoint = None  # Train from scratch
-
-# Initialize model based on checkpoint availability
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if checkpoint is None:
-    encoder = Encoder()
-    decoder = DecoderWithAttention(
-    attention_dim=512,
-    embed_dim=300,
-    decoder_dim=512,
-    encoder_dim=2048,
-    dropout=0.5).to(device)
-
-    decoder_optimizer = torch.optim.Adam(params=decoder.parameters(), lr=4e-4)
-
-else:
-    encoder = checkpoint["encoder"]
-    decoder = checkpoint["decoder"]
-    decoder_optimizer = checkpoint["decoder_optimizer"]
-
-# Continue with training loop...
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
 data_name = "indiana_chest_xray"  # Modify to match dataset structure
@@ -80,44 +45,27 @@ alpha_c = 1.0  # Attention regularization
 best_bleu4 = 0.0  # Initialize BLEU-4 score
 print_freq = 50  # More frequent logging for medical training
 fine_tune_encoder = True  # Enable fine-tuning since X-ray features may differ
-checkpoint = "/kaggle/working/checkpoint.pth"  # Save model in Kaggle working directory
+checkpoint_path = "/kaggle/working/checkpoint.pth"  # Save model in Kaggle working directory
 
 def main():
     """Training and validation."""
+    global best_bleu4, epochs_since_improvement, start_epoch, fine_tune_encoder, data_name, word_map
 
-    global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map
+    # Initialize models from scratch
+    decoder = DecoderWithAttention(attention_dim=attention_dim,
+                                   embed_dim=emb_dim,
+                                   decoder_dim=decoder_dim,
+                                   vocab_size=vocab_size,
+                                   dropout=dropout)
 
-    # Initialize / load checkpoint
-    if checkpoint is None:
-        decoder = DecoderWithAttention(attention_dim=attention_dim,
-                                       embed_dim=emb_dim,
-                                       decoder_dim=decoder_dim,
-                                       vocab_size=vocab_size,
-                                       dropout=dropout)
+    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
+                                         lr=decoder_lr)
 
-        decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
-                                             lr=decoder_lr)
+    encoder = Encoder()
+    encoder.fine_tune(fine_tune_encoder)
 
-        encoder = Encoder()
-        encoder.fine_tune(fine_tune_encoder)
-
-        encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
-                                             lr=encoder_lr) if fine_tune_encoder else None
-
-    else:
-        checkpoint = torch.load(checkpoint)
-        start_epoch = checkpoint["epoch"] + 1
-        epochs_since_improvement = checkpoint["epochs_since_improvement"]
-        best_bleu4 = checkpoint["bleu-4"]
-        decoder = checkpoint["decoder"]
-        decoder_optimizer = checkpoint["decoder_optimizer"]
-        encoder = checkpoint["encoder"]
-        encoder_optimizer = checkpoint["encoder_optimizer"]
-
-        if fine_tune_encoder and encoder_optimizer is None:
-            encoder.fine_tune(fine_tune_encoder)
-            encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
-                                                 lr=encoder_lr)
+    encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
+                                         lr=encoder_lr) if fine_tune_encoder else None
 
     # Move to GPU, if available
     decoder = decoder.to(device)
@@ -145,11 +93,7 @@ def main():
 
     print("Training initialized...")
 
-    # Epochs
-    import torch.optim.lr_scheduler as lr_scheduler
-
-    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()), lr=decoder_lr)
-
+    # Learning rate scheduler
     scheduler = lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode="max", factor=0.8, patience=8)
 
     for epoch in range(start_epoch, epochs):
@@ -286,10 +230,6 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
                   f"Loss {losses.val:.4f} ({losses.avg:.4f})  "
                   f"Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})")
 
-import torch
-import time
-from torch.nn.utils.rnn import pack_padded_sequence
-from torch.cuda.amp import autocast  # Mixed precision for validation
 
 def validate(val_loader, encoder, decoder, criterion):
     """
