@@ -2,7 +2,7 @@ import os
 import glob
 import torch
 from torch.utils.data import Dataset
-
+import pandas as pd 
 
 class IndianaXrayDataset(Dataset):
     def __init__(self, image_dir, projections_csv, reports_csv, split, transform=None):
