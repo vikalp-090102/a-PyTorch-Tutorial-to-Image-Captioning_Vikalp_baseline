@@ -10,6 +10,7 @@ from datasets_new_SAT import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
 import json
+from torch.optim import lr_scheduler
 
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
