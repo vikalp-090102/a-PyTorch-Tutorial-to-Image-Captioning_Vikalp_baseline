@@ -17,6 +17,7 @@ import torch
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
 data_name = "indiana_chest_xray"  # Modify to match dataset structure
+reports_csv= "/kaggle/input/chest-xrays-indiana-university/indiana_reports.csv"
 
 # Load word map dynamically
 word_map_path = "/kaggle/working/word_map.json"
