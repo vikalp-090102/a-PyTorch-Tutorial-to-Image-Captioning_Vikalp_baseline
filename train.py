@@ -11,6 +11,17 @@ from utils import *
 from nltk.translate.bleu_score import corpus_bleu
 import json
 from torch.optim import lr_scheduler
+import os
+import torch
+
+# Define checkpoint path
+checkpoint_path = "/kaggle/working/checkpoint.pth"
+
+# Check if checkpoint exists
+if os.path.exists(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path)
+else:
+    checkpoint = None  # No checkpoint, train from scratch
 
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
