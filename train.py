@@ -5,13 +5,13 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from models import Encoder, DecoderWithAttention
-from datasets import *
+from modela_new_SAT import Encoder, DecoderWithAttention
+from datasets_new_SAT import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
 
 # Data parameters
-data_folder = '/media/ssd/caption data'  # folder with data files saved by create_input_files.py
+data_folder = '/media/ssd/caption_new_SAT data'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 
 # Model parameters
@@ -89,10 +89,10 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
     train_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'TRAIN', transform=transforms.Compose([normalize])),
+        caption_new_SATDataset(data_folder, data_name, 'TRAIN', transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'VAL', transform=transforms.Compose([normalize])),
+        caption_new_SATDataset(data_folder, data_name, 'VAL', transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
 
     # Epochs
@@ -232,9 +232,9 @@ def validate(val_loader, encoder, decoder, criterion):
     :param criterion: loss layer
     :return: BLEU-4 score
     """
-    decoder.eval()  # eval mode (no dropout or batchnorm)
+    decoder.eval_new_SAT()  # eval mode (no dropout or batchnorm)
     if encoder is not None:
-        encoder.eval()
+        encoder.eval_new_SAT()
 
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -242,7 +242,7 @@ def validate(val_loader, encoder, decoder, criterion):
 
     start = time.time()
 
-    references = list()  # references (true captions) for calculating BLEU-4 score
+    references = list()  # references (true caption_new_SATs) for calculating BLEU-4 score
     hypotheses = list()  # hypotheses (predictions)
 
     # explicitly disable gradient calculation to avoid CUDA memory error
@@ -291,7 +291,7 @@ def validate(val_loader, encoder, decoder, criterion):
                       'Top-5 Accuracy {top5.val:.3f} ({top5.avg:.3f})\t'.format(i, len(val_loader), batch_time=batch_time,
                                                                                 loss=losses, top5=top5accs))
 
-            # Store references (true captions), and hypothesis (prediction) for each image
+            # Store references (true caption_new_SATs), and hypothesis (prediction) for each image
             # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
             # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
 
@@ -299,10 +299,10 @@ def validate(val_loader, encoder, decoder, criterion):
             allcaps = allcaps[sort_ind]  # because images were sorted in the decoder
             for j in range(allcaps.shape[0]):
                 img_caps = allcaps[j].tolist()
-                img_captions = list(
+                img_caption_new_SATs = list(
                     map(lambda c: [w for w in c if w not in {word_map['<start>'], word_map['<pad>']}],
                         img_caps))  # remove <start> and pads
-                references.append(img_captions)
+                references.append(img_caption_new_SATs)
 
             # Hypotheses
             _, preds = torch.max(scores_copy, dim=2)
