@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torchvision
-
+import json
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load word_map for dynamic vocabulary sizing
