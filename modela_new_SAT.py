@@ -31,12 +31,7 @@ class Encoder(nn.Module):
         self.fine_tune()
 
     def forward(self, images):
-        """
-        Forward propagation.
-
-        :param images: input images, tensor of shape (batch_size, 3, image_size, image_size)
-        :return: encoded images
-        """
+        """Forward propagation."""
         out = self.resnet(images)  # (batch_size, 2048, H/32, W/32)
         out = self.adaptive_pool(out)  # Resize to fixed (batch_size, 2048, 14, 14)
         out = out.permute(0, 2, 3, 1)  # (batch_size, 14, 14, 2048)
@@ -50,45 +45,28 @@ class Encoder(nn.Module):
             for p in c.parameters():
                 p.requires_grad = fine_tune
 
-
 class Attention(nn.Module):
-    """
-    Attention Network tailored for medical image captioning.
-    """
-    print(f"Initializing Attention with encoder_dim={encoder_dim}, decoder_dim={decoder_dim}, attention_dim={attention_dim}")
+    """Attention Network tailored for medical image captioning."""
+
     def __init__(self, encoder_dim, decoder_dim, attention_dim):
-        """
-        :param encoder_dim: Feature size of encoded images (2048 for ResNet-101)
-        :param decoder_dim: Size of decoder's LSTM hidden state
-        :param attention_dim: Size of attention layer
-        """
         super(Attention, self).__init__()
-        
-        self.encoder_att = nn.Linear(encoder_dim, attention_dim)  # Image feature transformation
-        self.decoder_att = nn.Linear(decoder_dim, attention_dim)  # Decoder hidden state transformation
-        self.full_att = nn.Linear(attention_dim, 1)  # Attention score layer
+
+        self.encoder_att = nn.Linear(encoder_dim, attention_dim)
+        self.decoder_att = nn.Linear(decoder_dim, attention_dim)
+        self.full_att = nn.Linear(attention_dim, 1)
         self.relu = nn.ReLU()
-        self.softmax = nn.Softmax(dim=1)  # Normalize attention weights
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, encoder_out, decoder_hidden):
-        """
-        Forward propagation.
+        att1 = self.encoder_att(encoder_out)
+        att2 = self.decoder_att(decoder_hidden)
+        att = self.full_att(self.relu(att1 + att2.unsqueeze(1))).squeeze(2)
 
-        :param encoder_out: Encoded image tensor (batch_size, num_pixels, encoder_dim)
-        :param decoder_hidden: Previous decoder hidden state (batch_size, decoder_dim)
-        :return: Attention-weighted encoding, attention weights
-        """
-        # Compute attention scores
-        att1 = self.encoder_att(encoder_out)  # Transform image features
-        att2 = self.decoder_att(decoder_hidden)  # Transform hidden state
-        att = self.full_att(self.relu(att1 + att2.unsqueeze(1))).squeeze(2)  # Apply activation & score layer
-        
-        # Compute attention weights
-        alpha = self.softmax(att)  # Normalize scores (batch_size, num_pixels)
-        attention_weighted_encoding = (encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # Weighted sum (batch_size, encoder_dim)
+        alpha = self.softmax(att)
+        attention_weighted_encoding = (encoder_out * alpha.unsqueeze(2)).sum(dim=1)
 
         return attention_weighted_encoding, alpha
-        
+
 class DecoderWithAttention(nn.Module):
     """Decoder with Attention mechanism."""
 
@@ -131,29 +109,22 @@ class DecoderWithAttention(nn.Module):
         return h, c
 
     def forward(self, encoder_out, encoded_captions, caption_lengths):
-        """Forward pass of the decoder."""
         batch_size = encoder_out.size(0)
         encoder_dim = encoder_out.size(-1)
 
-        # Flatten image embeddings
         encoder_out = encoder_out.view(batch_size, -1, encoder_dim)
         num_pixels = encoder_out.size(1)
 
-        # Sort data by caption length (descending order)
         caption_lengths, sort_ind = caption_lengths.squeeze(1).sort(dim=0, descending=True)
         encoder_out = encoder_out[sort_ind]
         encoded_captions = encoded_captions[sort_ind]
 
-        # Embedding layer
         embeddings = self.embedding(encoded_captions)
 
-        # Initialize LSTM state
         h, c = self.init_hidden_state(encoder_out)
 
-        # Determine decode lengths
         decode_lengths = (caption_lengths - 1).tolist()
 
-        # Create tensors to hold predictions and alpha values
         predictions = torch.zeros(batch_size, max(decode_lengths), self.vocab_size).to(device)
         alphas = torch.zeros(batch_size, max(decode_lengths), num_pixels).to(device)
 
