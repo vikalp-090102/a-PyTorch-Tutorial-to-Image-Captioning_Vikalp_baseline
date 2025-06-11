@@ -15,6 +15,14 @@ import os
 import torch
 from torch.cuda.amp import GradScaler, autocast
 
+def collate_fn(data_batch):
+    images, captions, lengths = zip(*data_batch)
+    images = torch.stack(images, 0)
+    captions_padded = pad_sequence(captions, batch_first=True, padding_value=word_map['<pad>'])
+    lengths = torch.tensor(lengths, dtype=torch.long)
+    return images, captions_padded, lengths
+
+
 # Data parameters
 data_folder = "/kaggle/input/chest-xrays-indiana-university"  # Update to Indiana dataset path
 data_name = "indiana_chest_xray"  # Modify to match dataset structure
@@ -258,14 +266,15 @@ def main():
     ])
     
     train_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="TRAIN", transform=normalize),
-        batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True
+    IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="TRAIN", word_map=word_map, transform=normalize),
+    batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True, collate_fn=collate_fn
     )
 
     val_loader = torch.utils.data.DataLoader(
-        IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="VAL", transform=normalize),
-        batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True
+    IndianaXrayDataset(data_folder, projections_csv, reports_csv, split="VAL", word_map=word_map, transform=normalize),
+    batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True, collate_fn=collate_fn
     )
+
 
     print("Training initialized...")
 
