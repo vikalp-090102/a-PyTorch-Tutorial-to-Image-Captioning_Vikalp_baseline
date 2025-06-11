@@ -4,18 +4,16 @@ import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
-from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
 from modela_new_SAT import Encoder, DecoderWithAttention
 from datasets_new_SAT import *
-from utils import *  # Make sure this includes save_checkpoint, AverageMeter, accuracy
+from utils import *  # save_checkpoint, AverageMeter, accuracy etc.
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 import json
 from torch.optim import lr_scheduler
 import os
 import torch
 from torch.cuda.amp import GradScaler, autocast
-
-# (Your collate_fn unchanged)
 
 # Load word map dynamically
 word_map_path = "/kaggle/working/word_map.json"
@@ -30,7 +28,16 @@ cudnn.benchmark = True
 # Initialize mixed precision scaler
 scaler = GradScaler()
 
-# ... (Your other hyperparams unchanged)
+# Hyperparameters (adjust as needed)
+alpha_c = 1.0  # attention regularization coefficient
+grad_clip = 5.0
+print_freq = 100
+epochs = 10
+batch_size = 32
+workers = 4
+grad_accum_steps = 2
+learning_rate_encoder = 1e-4
+learning_rate_decoder = 4e-4
 
 def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch, grad_accum_steps=2):
     decoder.train()
@@ -93,6 +100,7 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
                   f"Data Load Time {data_time.val:.3f} ({data_time.avg:.3f})  "
                   f"Loss {losses.val:.4f} ({losses.avg:.4f})  "
                   f"Top-5 Accuracy {top5accs.val:.3f} ({top5accs.avg:.3f})")
+
 
 def validate(val_loader, encoder, decoder, criterion):
     decoder.eval()
@@ -157,7 +165,73 @@ def validate(val_loader, encoder, decoder, criterion):
 
     return bleu4
 
-# Your main() function unchanged except the import fixes
+
+def main():
+    # Seed, reproducibility
+    torch.manual_seed(123)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(123)
+
+    # Data transforms (adjust as needed)
+    transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
+
+    # Initialize your datasets and dataloaders here
+    # Replace DatasetClass with your dataset class from datasets_new_SAT
+    train_dataset = DatasetClass(split='train', transform=transform, word_map=word_map)
+    val_dataset = DatasetClass(split='val', transform=transform, word_map=word_map)
+
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+                                               batch_size=batch_size,
+                                               shuffle=True,
+                                               num_workers=workers,
+                                               collate_fn=train_dataset.collate_fn)
+
+    val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
+                                             batch_size=batch_size,
+                                             shuffle=False,
+                                             num_workers=workers,
+                                             collate_fn=val_dataset.collate_fn)
+
+    # Initialize models
+    encoder = Encoder().to(device)
+    decoder = DecoderWithAttention(vocab_size=vocab_size).to(device)
+
+    # Define loss function
+    criterion = nn.CrossEntropyLoss().to(device)
+
+    # Define optimizers
+    encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
+                                         lr=learning_rate_encoder)
+    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
+                                         lr=learning_rate_decoder)
+
+    best_bleu4 = 0.0
+    epochs_since_improvement = 0
+
+    for epoch in range(epochs):
+        print(f"\nEpoch {epoch + 1} of {epochs}")
+        train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch,
+              grad_accum_steps=grad_accum_steps)
+        bleu4 = validate(val_loader, encoder, decoder, criterion)
+
+        # Save checkpoint if best
+        is_best = bleu4 > best_bleu4
+        best_bleu4 = max(bleu4, best_bleu4)
+        if not is_best:
+            epochs_since_improvement += 1
+        else:
+            epochs_since_improvement = 0
+
+        save_checkpoint('dataset_name', epoch, epochs_since_improvement, encoder, decoder,
+                        encoder_optimizer, decoder_optimizer, bleu4, is_best)
+
+        # Early stopping or learning rate adjustment could be added here
+
 
 if __name__ == "__main__":
     main()
