@@ -1,73 +1,81 @@
 import os
-import numpy as np
-import h5py
 import json
+import h5py
 import torch
 import imageio
 import cv2
-
-# Use imageio for imread
-def imread(path):
-    return imageio.imread(path)
-
-# Use cv2 for resizing
-def imresize(image, size):
-    return cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
-from tqdm import tqdm
+import numpy as np
 from collections import Counter
 from random import seed, choice, sample
+from tqdm import tqdm
 
 
-def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_image, min_word_freq, output_folder,
-                       max_len=100):
+def imread(path):
+    """
+    Reads an image from disk and returns it as a numpy array (RGB).
+    """
+    img = imageio.imread(path)
+    if img.ndim == 2:  # grayscale to RGB
+        img = np.stack([img] * 3, axis=2)
+    elif img.shape[2] == 4:  # RGBA to RGB
+        img = img[:, :, :3]
+    return img
+
+
+def imresize(image, size):
+    """
+    Resizes an image to the specified size (width, height) using bilinear interpolation.
+    """
+    return cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+
+
+def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_image,
+                       min_word_freq, output_folder, max_len=100):
     """
     Creates input files for training, validation, and test data.
 
-    :param dataset: name of dataset, one of 'coco', 'flickr8k', 'flickr30k'
-    :param karpathy_json_path: path of Karpathy JSON file with splits and captions
-    :param image_folder: folder with downloaded images
-    :param captions_per_image: number of captions to sample per image
-    :param min_word_freq: words occuring less frequently than this threshold are binned as <unk>s
-    :param output_folder: folder to save files
-    :param max_len: don't sample captions longer than this length
+    :param dataset: 'coco', 'flickr8k', or 'flickr30k'
+    :param karpathy_json_path: Path to Karpathy JSON file with splits and captions
+    :param image_folder: Folder with downloaded images
+    :param captions_per_image: Number of captions to sample per image
+    :param min_word_freq: Minimum frequency of words to be kept in vocabulary
+    :param output_folder: Folder to save processed files
+    :param max_len: Maximum caption length allowed (captions longer than this are skipped)
     """
-
     assert dataset in {'coco', 'flickr8k', 'flickr30k'}
 
-    # Read Karpathy JSON
     with open(karpathy_json_path, 'r') as j:
         data = json.load(j)
 
-    # Read image paths and captions for each image
-    train_image_paths = []
-    train_image_captions = []
-    val_image_paths = []
-    val_image_captions = []
-    test_image_paths = []
-    test_image_captions = []
+    train_image_paths, train_image_captions = [], []
+    val_image_paths, val_image_captions = [], []
+    test_image_paths, test_image_captions = [], []
     word_freq = Counter()
 
+    # Gather captions and paths per split
     for img in data['images']:
         captions = []
         for c in img['sentences']:
-            # Update word frequency
-            word_freq.update(c['tokens'])
             if len(c['tokens']) <= max_len:
                 captions.append(c['tokens'])
+                word_freq.update(c['tokens'])
 
         if len(captions) == 0:
             continue
 
-        path = os.path.join(image_folder, img['filepath'], img['filename']) if dataset == 'coco' else os.path.join(
-            image_folder, img['filename'])
+        # Construct image path based on dataset
+        if dataset == 'coco':
+            path = os.path.join(image_folder, img['filepath'], img['filename'])
+        else:
+            path = os.path.join(image_folder, img['filename'])
 
         if img['split'] in {'train', 'restval'}:
             train_image_paths.append(path)
             train_image_captions.append(captions)
-        elif img['split'] in {'val'}:
+        elif img['split'] == 'val':
             val_image_paths.append(path)
             val_image_captions.append(captions)
-        elif img['split'] in {'test'}:
+        elif img['split'] == 'test':
             test_image_paths.append(path)
             test_image_captions.append(captions)
 
@@ -77,89 +85,79 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
     assert len(test_image_paths) == len(test_image_captions)
 
     # Create word map
-    words = [w for w in word_freq.keys() if word_freq[w] > min_word_freq]
-    word_map = {k: v + 1 for v, k in enumerate(words)}
+    words = [w for w in word_freq if word_freq[w] > min_word_freq]
+    word_map = {word: idx + 1 for idx, word in enumerate(words)}
+    # Add special tokens
     word_map['<unk>'] = len(word_map) + 1
     word_map['<start>'] = len(word_map) + 1
     word_map['<end>'] = len(word_map) + 1
     word_map['<pad>'] = 0
 
-    # Create a base/root name for all output files
-    base_filename = dataset + '_' + str(captions_per_image) + '_cap_per_img_' + str(min_word_freq) + '_min_word_freq'
+    base_filename = f"{dataset}_{captions_per_image}_cap_per_img_{min_word_freq}_min_word_freq"
 
-    # Save word map to a JSON
-    with open(os.path.join(output_folder, 'WORDMAP_' + base_filename + '.json'), 'w') as j:
+    # Save word map
+    os.makedirs(output_folder, exist_ok=True)
+    with open(os.path.join(output_folder, f'WORDMAP_{base_filename}.json'), 'w') as j:
         json.dump(word_map, j)
 
-    # Sample captions for each image, save images to HDF5 file, and captions and their lengths to JSON files
-    seed(123)
+    seed(123)  # for reproducibility
+
     for impaths, imcaps, split in [(train_image_paths, train_image_captions, 'TRAIN'),
                                    (val_image_paths, val_image_captions, 'VAL'),
                                    (test_image_paths, test_image_captions, 'TEST')]:
 
-        with h5py.File(os.path.join(output_folder, split + '_IMAGES_' + base_filename + '.hdf5'), 'a') as h:
-            # Make a note of the number of captions we are sampling per image
+        with h5py.File(os.path.join(output_folder, f'{split}_IMAGES_{base_filename}.hdf5'), 'w') as h:
             h.attrs['captions_per_image'] = captions_per_image
-
-            # Create dataset inside HDF5 file to store images
             images = h.create_dataset('images', (len(impaths), 3, 256, 256), dtype='uint8')
 
-            print("\nReading %s images and captions, storing to file...\n" % split)
+            print(f"\nReading {split} images and captions, storing to file...\n")
 
             enc_captions = []
             caplens = []
 
             for i, path in enumerate(tqdm(impaths)):
 
-                # Sample captions
+                # Sample captions for this image
                 if len(imcaps[i]) < captions_per_image:
                     captions = imcaps[i] + [choice(imcaps[i]) for _ in range(captions_per_image - len(imcaps[i]))]
                 else:
                     captions = sample(imcaps[i], k=captions_per_image)
 
-                # Sanity check
                 assert len(captions) == captions_per_image
 
-                # Read images
-                img = imread(impaths[i])
-                if len(img.shape) == 2:
-                    img = img[:, :, np.newaxis]
-                    img = np.concatenate([img, img, img], axis=2)
+                # Read and resize image
+                img = imread(path)
                 img = imresize(img, (256, 256))
-                img = img.transpose(2, 0, 1)
+                img = img.transpose(2, 0, 1)  # HWC to CHW
                 assert img.shape == (3, 256, 256)
                 assert np.max(img) <= 255
 
-                # Save image to HDF5 file
                 images[i] = img
 
-                for j, c in enumerate(captions):
-                    # Encode captions
-                    enc_c = [word_map['<start>']] + [word_map.get(word, word_map['<unk>']) for word in c] + [
-                        word_map['<end>']] + [word_map['<pad>']] * (max_len - len(c))
-
-                    # Find caption lengths
-                    c_len = len(c) + 2
+                for c in captions:
+                    # Encode caption with <start> and <end> and pad to max_len
+                    enc_c = [word_map['<start>']] + [word_map.get(word, word_map['<unk>']) for word in c] + \
+                            [word_map['<end>']] + [word_map['<pad>']] * (max_len - len(c))
+                    c_len = len(c) + 2  # Including <start> and <end>
 
                     enc_captions.append(enc_c)
                     caplens.append(c_len)
 
-            # Sanity check
             assert images.shape[0] * captions_per_image == len(enc_captions) == len(caplens)
 
-            # Save encoded captions and their lengths to JSON files
-            with open(os.path.join(output_folder, split + '_CAPTIONS_' + base_filename + '.json'), 'w') as j:
+            # Save captions and caption lengths
+            with open(os.path.join(output_folder, f'{split}_CAPTIONS_{base_filename}.json'), 'w') as j:
                 json.dump(enc_captions, j)
 
-            with open(os.path.join(output_folder, split + '_CAPLENS_' + base_filename + '.json'), 'w') as j:
+            with open(os.path.join(output_folder, f'{split}_CAPLENS_{base_filename}.json'), 'w') as j:
                 json.dump(caplens, j)
 
 
 def init_embedding(embeddings):
     """
-    Fills embedding tensor with values from the uniform distribution.
+    Initializes embedding tensor with uniform distribution.
 
-    :param embeddings: embedding tensor
+    :param embeddings: torch.FloatTensor to initialize
     """
     bias = np.sqrt(3.0 / embeddings.size(1))
     torch.nn.init.uniform_(embeddings, -bias, bias)
@@ -167,45 +165,37 @@ def init_embedding(embeddings):
 
 def load_embeddings(emb_file, word_map):
     """
-    Creates an embedding tensor for the specified word map, for loading into the model.
+    Loads pretrained GloVe embeddings aligned with word_map.
 
-    :param emb_file: file containing embeddings (stored in GloVe format)
-    :param word_map: word map
-    :return: embeddings in the same order as the words in the word map, dimension of embeddings
+    :param emb_file: Path to GloVe file
+    :param word_map: Vocabulary word map
+    :return: (embeddings tensor, embedding dimension)
     """
-
-    # Find embedding dimension
-    with open(emb_file, 'r') as f:
-        emb_dim = len(f.readline().split(' ')) - 1
+    with open(emb_file, 'r', encoding='utf-8') as f:
+        emb_dim = len(f.readline().strip().split(' ')) - 1
 
     vocab = set(word_map.keys())
-
-    # Create tensor to hold embeddings, initialize
-    embeddings = torch.FloatTensor(len(vocab), emb_dim)
+    embeddings = torch.FloatTensor(len(word_map), emb_dim)
     init_embedding(embeddings)
 
-    # Read embedding file
     print("\nLoading embeddings...")
-    for line in open(emb_file, 'r'):
-        line = line.split(' ')
+    with open(emb_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.rstrip().split(' ')
+            emb_word = line[0]
+            embedding = list(map(float, line[1:]))
 
-        emb_word = line[0]
-        embedding = list(map(lambda t: float(t), filter(lambda n: n and not n.isspace(), line[1:])))
-
-        # Ignore word if not in train_vocab
-        if emb_word not in vocab:
-            continue
-
-        embeddings[word_map[emb_word]] = torch.FloatTensor(embedding)
+            if emb_word in vocab:
+                embeddings[word_map[emb_word]] = torch.FloatTensor(embedding)
 
     return embeddings, emb_dim
 
 
 def clip_gradient(optimizer, grad_clip):
     """
-    Clips gradients computed during backpropagation to avoid explosion of gradients.
+    Clips gradients to avoid exploding gradients.
 
-    :param optimizer: optimizer with the gradients to be clipped
+    :param optimizer: optimizer with gradients
     :param grad_clip: clip value
     """
     for group in optimizer.param_groups:
@@ -214,38 +204,40 @@ def clip_gradient(optimizer, grad_clip):
                 param.grad.data.clamp_(-grad_clip, grad_clip)
 
 
-def save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer, decoder_optimizer,
-                    bleu4, is_best):
+def save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder,
+                    encoder_optimizer, decoder_optimizer, bleu4, is_best):
     """
-    Saves model checkpoint.
+    Saves checkpoint.
 
-    :param data_name: base name of processed dataset
-    :param epoch: epoch number
-    :param epochs_since_improvement: number of epochs since last improvement in BLEU-4 score
+    :param data_name: dataset base name
+    :param epoch: current epoch
+    :param epochs_since_improvement: epochs since last BLEU-4 improvement
     :param encoder: encoder model
     :param decoder: decoder model
-    :param encoder_optimizer: optimizer to update encoder's weights, if fine-tuning
-    :param decoder_optimizer: optimizer to update decoder's weights
-    :param bleu4: validation BLEU-4 score for this epoch
-    :param is_best: is this checkpoint the best so far?
+    :param encoder_optimizer: encoder optimizer
+    :param decoder_optimizer: decoder optimizer
+    :param bleu4: BLEU-4 score
+    :param is_best: flag if this is best model so far
     """
-    state = {'epoch': epoch,
-             'epochs_since_improvement': epochs_since_improvement,
-             'bleu-4': bleu4,
-             'encoder': encoder,
-             'decoder': decoder,
-             'encoder_optimizer': encoder_optimizer,
-             'decoder_optimizer': decoder_optimizer}
-    filename = 'checkpoint_' + data_name + '.pth.tar'
+    state = {
+        'epoch': epoch,
+        'epochs_since_improvement': epochs_since_improvement,
+        'bleu-4': bleu4,
+        'encoder_state_dict': encoder.state_dict(),
+        'decoder_state_dict': decoder.state_dict(),
+        'encoder_optimizer_state_dict': encoder_optimizer.state_dict() if encoder_optimizer else None,
+        'decoder_optimizer_state_dict': decoder_optimizer.state_dict() if decoder_optimizer else None
+    }
+    filename = f'checkpoint_{data_name}.pth.tar'
     torch.save(state, filename)
-    # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
+
     if is_best:
-        torch.save(state, 'BEST_' + filename)
+        torch.save(state, f'BEST_{filename}')
 
 
-class AverageMeter(object):
+class AverageMeter:
     """
-    Keeps track of most recent, average, sum, and count of a metric.
+    Computes and stores average and current value of metrics.
     """
 
     def __init__(self):
@@ -261,35 +253,33 @@ class AverageMeter(object):
         self.val = val
         self.sum += val * n
         self.count += n
-        self.avg = self.sum / self.count
+        self.avg = self.sum / self.count if self.count != 0 else 0
 
 
 def adjust_learning_rate(optimizer, shrink_factor):
     """
-    Shrinks learning rate by a specified factor.
+    Decays learning rate by a given factor.
 
-    :param optimizer: optimizer whose learning rate must be shrunk.
-    :param shrink_factor: factor in interval (0, 1) to multiply learning rate with.
+    :param optimizer: optimizer to update
+    :param shrink_factor: factor between 0 and 1
     """
-
     print("\nDECAYING learning rate.")
     for param_group in optimizer.param_groups:
-        param_group['lr'] = param_group['lr'] * shrink_factor
-    print("The new learning rate is %f\n" % (optimizer.param_groups[0]['lr'],))
+        param_group['lr'] *= shrink_factor
+    print(f"New learning rate: {optimizer.param_groups[0]['lr']:.6f}\n")
 
 
 def accuracy(scores, targets, k):
     """
-    Computes top-k accuracy, from predicted and true labels.
+    Computes top-k accuracy.
 
-    :param scores: scores from the model
-    :param targets: true labels
-    :param k: k in top-k accuracy
-    :return: top-k accuracy
+    :param scores: model output scores (batch_size x num_classes)
+    :param targets: true labels (batch_size)
+    :param k: top-k
+    :return: accuracy percentage
     """
-
     batch_size = targets.size(0)
-    _, ind = scores.topk(k, 1, True, True)
+    _, ind = scores.topk(k, dim=1, largest=True, sorted=True)
     correct = ind.eq(targets.view(-1, 1).expand_as(ind))
-    correct_total = correct.view(-1).float().sum()  # 0D tensor
+    correct_total = correct.view(-1).float().sum()
     return correct_total.item() * (100.0 / batch_size)
